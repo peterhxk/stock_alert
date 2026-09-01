@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}History — Price Alerts{% endblock %}
+{% block sub %}<p class="sub">Every alert that has fired, most recent first.</p>{% endblock %}
+{% block body %}
+<div class="card">
+  <h2>Fire history</h2>
+  {% if fires %}
+  <table>
+    <thead><tr><th>When</th><th>Alert</th><th class="num">Price</th>
+               <th class="hide-sm">Session</th><th class="hide-sm">Delivered</th></tr></thead>
+    <tbody>
+    {% for f in fires %}
+      <tr>
+        <td class="muted" style="white-space:nowrap">{{ f.fired_at.strftime('%Y-%m-%d %H:%M') }} UTC</td>
+        <td>{{ f.message }}</td>
+        <td class="num">${{ '%.2f'|format(f.price) }}</td>
+        <td class="hide-sm"><span class="chip">{{ f.session }}</span></td>
+        <td class="hide-sm">
+          {% if f.delivered %}<span class="chip on">{{ f.delivered }}</span>
+          {% else %}<span class="chip" style="color:var(--down)">not sent</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">Nothing has fired yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

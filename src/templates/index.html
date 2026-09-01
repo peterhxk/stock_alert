@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block sub %}
+<p class="sub">
+  Polling every {{ poll }}s ·
+  {% if channels %}delivering via <strong>{{ channels|join(' + ') }}</strong>
+  {% else %}<span class="down">no delivery channel configured</span>{% endif %}
+</p>
+{% if not channels %}
+<div class="banner">
+  Alerts will fire and be recorded, but nothing will be sent. Set
+  <code>NOTIFY_SMTP_PASS</code> + <code>NOTIFY_TO_EMAIL</code> (email) or
+  <code>NTFY_TOPIC</code> (push) in <code>.env</code>, then restart.
+</div>
+{% endif %}
+{% endblock %}
+
+{% block body %}
+<div class="card">
+  <h2>Add an alert</h2>
+  <form method="post" action="{{ url_for('create') }}">
+    <div class="grid">
+      <div>
+        <label for="ticker">Ticker</label>
+        <input id="ticker" name="ticker" placeholder="AAPL" required
+               autocapitalize="characters" autocomplete="off">
+      </div>
+      <div>
+        <label for="kind">Condition</label>
+        <select id="kind" name="kind">
+          <option value="price_above">price rises above</option>
+          <option value="price_below">price falls below</option>
+          <option value="pct_up">gains at least (%)</option>
+          <option value="pct_down">falls at least (%)</option>
+        </select>
+      </div>
+      <div>
+        <label for="threshold">Threshold</label>
+        <input id="threshold" name="threshold" type="number" step="any" min="0"
+               placeholder="320" required>
+      </div>
+      <div>
+        <label for="repeat">Repeat</label>
+        <select id="repeat" name="repeat">
+          <option value="rearm">once per crossing</option>
+          <option value="once">once, then disable</option>
+          <option value="cooldown">repeat, with cooldown</option>
+        </select>
+      </div>
+      <div>
+        <label for="cooldown_minutes">Cooldown (min)</label>
+        <input id="cooldown_minutes" name="cooldown_minutes" type="number"
+               min="1" value="60">
+      </div>
+      <div>
+        <label for="note">Note (optional)</label>
+        <input id="note" name="note" placeholder="why you care">
+      </div>
+    </div>
+    <div class="row-end">
+      <button class="primary" type="submit">Add alert</button>
+      <label class="check">
+        <input type="checkbox" name="extended_hours" checked>
+        include pre-market &amp; after-hours
+      </label>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Alerts ({{ rows|selectattr('a.active')|list|length }} active)</h2>
+  {% if rows %}
+  <table>
+    <thead>
+      <tr>
+        <th>Ticker</th><th>Condition</th>
+        <th class="num">Last price</th><th class="num hide-sm">To trigger</th>
+        <th class="hide-sm">Status</th><th class="hide-sm">Checked</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in rows %}
+      {% set a = r.a %}
+      <tr {% if not a.active %}style="opacity:.55"{% endif %}>
+        <td class="tk">{{ a.ticker }}</td>
+        <td>
+          {{ a.describe()[a.ticker|length + 1:] }}
+          {% if a.note %}<div class="muted" style="font-size:12.5px">{{ a.note }}</div>{% endif %}
+        </td>
+        <td class="num">{% if a.last_price %}${{ '%.2f'|format(a.last_price) }}{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="num hide-sm">
+          {% if r.distance is not none %}
+            <span class="{{ 'up' if r.distance > 0 else 'down' }}">{{ '%+.2f'|format(r.distance) }}%</span>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td class="hide-sm">
+          {% if not a.active %}<span class="chip off">disabled</span>
+          {% elif a.armed %}<span class="chip on">armed</span>
+          {% else %}<span class="chip">fired</span>{% endif %}
+          {% if a.extended_hours %}<span class="chip">ext</span>{% endif %}
+          <span class="chip">{{ a.repeat.value }}</span>
+        </td>
+        <td class="muted hide-sm" style="font-size:12.5px">{{ a.last_checked_at|ago }}</td>
+        <td style="text-align:right;white-space:nowrap">
+          <form class="inline" method="post" action="{{ url_for('toggle', aid=a.id) }}">
+            <button type="submit">{{ 'Enable' if not a.active else 'Pause' }}</button>
+          </form>
+          <form class="inline" method="post" action="{{ url_for('delete', aid=a.id) }}"
+                onsubmit="return confirm('Delete this alert?')">
+            <button class="danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No alerts yet. Add one above.</div>
+  {% endif %}
+</div>
+
+{% if recent %}
+<div class="card">
+  <h2>Recently fired</h2>
+  <table>
+    <tbody>
+    {% for f in recent %}
+      <tr>
+        <td>{{ f.message }}</td>
+        <td class="muted hide-sm" style="width:90px">{{ f.session }}</td>
+        <td class="muted num" style="width:110px">{{ f.fired_at|ago }}</td>
+        <td class="num" style="width:110px">
+          {% if f.delivered %}<span class="chip on">{{ f.delivered }}</span>
+          {% else %}<span class="chip" style="color:var(--down)">not sent</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

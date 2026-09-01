@@ -1,0 +1,23 @@
+# Two services, one image. They are split so a slow notification or a Yahoo
+# hiccup in the poller can never block the UI, and restarting the UI can never
+# drop the poller.
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    env_file: .env
+    volumes:
+      - alerts-data:/data
+
+  engine:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "src.engine"]
+    env_file: .env
+    volumes:
+      - alerts-data:/data
+
+volumes:
+  alerts-data:

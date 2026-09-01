@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Price Alerts{% endblock %}
+{% block body %}
+<div class="card" style="max-width:340px;margin:60px auto">
+  <h2>Sign in</h2>
+  <form method="post">
+    <label for="pw">Password</label>
+    <input id="pw" type="password" name="password" autofocus required>
+    <div class="row-end"><button class="primary" type="submit">Sign in</button></div>
+  </form>
+</div>
+{% endblock %}

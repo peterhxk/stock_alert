@@ -1,0 +1,11 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Local database and logs — the container mounts these as a volume
+data/*.db
+data/*.db-journal
+data/*.log
