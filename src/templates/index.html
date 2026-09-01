@@ -4,7 +4,23 @@
   Polling every {{ poll }}s ·
   {% if channels %}delivering via <strong>{{ channels|join(' + ') }}</strong>
   {% else %}<span class="down">no delivery channel configured</span>{% endif %}
+  {% if not engine.stale %} · poller {{ engine.seen_at|ago }}, market
+  <strong>{{ engine.market_session or '—' }}</strong>{% endif %}
 </p>
+{% if engine.stale %}
+<div class="banner">
+  <strong>The poller is not reporting.</strong>
+  {% if engine.seen_at %}Last completed poll {{ engine.seen_at|ago }}
+  {% else %}It has never completed a poll{% endif %} — nothing is being checked
+  right now. Start it with <code>docker compose up -d engine</code>, or
+  <code>python -m src.engine</code>.
+  {% if engine.last_error %}<div class="muted" style="margin-top:6px">
+    last error: <code>{{ engine.last_error }}</code></div>{% endif %}
+</div>
+{% elif engine.last_error %}
+<div class="banner">Last poll failed: <code>{{ engine.last_error }}</code>.
+  The poller keeps retrying.</div>
+{% endif %}
 {% if not channels %}
 <div class="banner">
   Alerts will fire and be recorded, but nothing will be sent. Set
@@ -101,6 +117,7 @@
         </td>
         <td class="muted hide-sm" style="font-size:12.5px">{{ a.last_checked_at|ago }}</td>
         <td style="text-align:right;white-space:nowrap">
+          <a href="{{ url_for('edit', aid=a.id) }}"><button type="button">Edit</button></a>
           <form class="inline" method="post" action="{{ url_for('toggle', aid=a.id) }}">
             <button type="submit">{{ 'Enable' if not a.active else 'Pause' }}</button>
           </form>

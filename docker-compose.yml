@@ -10,6 +10,16 @@ services:
     env_file: .env
     volumes:
       - alerts-data:/data
+    # /healthz is 503 when the poller has stopped reporting, so an unhealthy
+    # web container means "alerts are not being checked" - the failure that
+    # actually matters - not just "the UI is down".
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 60s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
 
   engine:
     build: .

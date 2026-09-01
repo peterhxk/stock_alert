@@ -19,6 +19,12 @@ push when they trigger — including during pre-market and after-hours.
   push. A failure in one never blocks the other or kills the poller.
 - **History** of everything that fired, including which channels actually
   delivered.
+- **Typos are caught at entry.** A symbol is checked against Yahoo before the
+  alert is saved, because a mistyped ticker is otherwise completely silent — the
+  alert sits in the list looking healthy and simply never fires.
+- **A dead poller is visible.** The engine records a heartbeat on every pass;
+  `/healthz` returns 503 and the UI says so when it stops. A monitor that only
+  checked the web app would report everything fine while nothing was watched.
 
 ## Firing semantics
 
@@ -42,8 +48,13 @@ What happens next is per-alert:
 This is covered by tests:
 
 ```bash
-python -m tests.test_engine    # 15 assertions, offline, sends nothing
+python -m tests              # 51 assertions, offline, sends nothing
+python -m tests.test_engine  # firing semantics only
+python -m tests.test_web     # validation, editing, liveness, login
 ```
+
+The suite runs against a throwaway database in a temp directory, so it never
+touches your real alerts.
 
 ## Run it
 
@@ -76,6 +87,8 @@ All via `.env` — see `.env.example`. Nothing secret is committed.
 | `POLL_SECONDS` | Poll interval, default 60. |
 | `INCLUDE_EXTENDED_HOURS` | Whether to fetch pre/post-market quotes at all. |
 | `UI_PASSWORD` | Requires a login. **Set this before exposing the UI beyond localhost.** |
+| `ENGINE_STALE_SECONDS` | How long without a completed poll before `/healthz` reports the poller dead. Default: three poll intervals, floor 180s. |
+| `VALIDATE_TICKERS` | Check symbols resolve before saving. Turn off to add alerts offline. |
 
 The UI tells you when no channel is configured — alerts still fire and are
 recorded, but nothing gets sent.
@@ -86,9 +99,12 @@ The point of the container is that a laptop sleeps and misses alerts. The same
 image runs unchanged on any always-on host — a $5 VPS, Fly.io, a Raspberry Pi.
 Copy `.env` across and `docker compose up -d`.
 
-If you expose it publicly, **set `UI_PASSWORD`** and put it behind TLS. There is
-no rate limiting on the login form, so a public deployment should sit behind a
-reverse proxy that has some.
+If you expose it publicly, **set `UI_PASSWORD`** and put it behind TLS. The
+login form compares in constant time and locks out after
+`LOGIN_MAX_ATTEMPTS` failures, but that limit is per-process and in-memory — a
+public deployment still belongs behind a reverse proxy. Session cookies are
+signed with a key persisted under `DATA_DIR`, so restarts and multiple gunicorn
+workers do not invalidate your login.
 
 ## Notes and limits
 
@@ -100,5 +116,10 @@ reverse proxy that has some.
 - **No extended-hours volume.** Yahoo reports zero for essentially all
   pre/post-market bars, so volume-based conditions would be meaningless outside
   the regular session and aren't offered.
-- **`healthz`** returns active alert count and configured channels, for uptime
-  monitoring.
+- **`healthz`** returns the active alert count, configured channels, and how
+  long ago the poller last completed a pass. It is **503 when the poller has
+  gone quiet**, which is what the compose healthcheck watches — a green web
+  container with a dead engine is the failure mode worth catching.
+- **Schema changes migrate themselves** on boot: missing columns are added with
+  `ALTER TABLE` at startup, so upgrading over an existing database works.
+  Anything beyond adding a nullable column would need a real migration tool.

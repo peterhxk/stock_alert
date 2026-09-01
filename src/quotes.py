@@ -7,7 +7,9 @@ daily series and is cached, since it only changes once a day.
 One request covers every ticker being watched, so poll cost does not grow with
 the number of alerts - only with the number of distinct symbols.
 """
+import contextlib
 import datetime as dt
+import logging
 import threading
 import warnings
 
@@ -107,6 +109,55 @@ def get_quotes(tickers, include_extended=True):
             "pct": (price / pc - 1.0) * 100.0 if pc else None,
         }
     return out
+
+
+@contextlib.contextmanager
+def _quiet_yfinance():
+    """Mute yfinance's own logging for one call.
+
+    An unknown symbol makes it log a 404 and "No data found" at error level.
+    On the validation path that is the expected answer, not a fault, and it
+    would otherwise fill the web log every time someone mistypes a ticker.
+    """
+    lg = logging.getLogger("yfinance")
+    before = lg.level
+    lg.setLevel(logging.CRITICAL)
+    try:
+        yield
+    finally:
+        lg.setLevel(before)
+
+
+class QuoteError(RuntimeError):
+    """Yahoo could not be reached or returned something unusable."""
+
+
+def resolve(ticker: str):
+    """Validate one symbol and return a best-effort quote, or None if unknown.
+
+    Raises QuoteError if the lookup itself failed, which the caller must treat
+    differently from "no such ticker" - a network blip should never stop you
+    adding an alert.
+
+    Intraday bars are empty on weekends and holidays for perfectly real
+    symbols, so an empty intraday result falls back to the daily series before
+    concluding the symbol does not exist.
+    """
+    t = (ticker or "").strip().upper()
+    if not t:
+        return None
+    try:
+        with _quiet_yfinance():
+            q = get_quotes([t])
+            if t in q:
+                return q[t]
+            pc = _prev_closes([t]).get(t)
+    except Exception as e:
+        raise QuoteError(f"{type(e).__name__}: {e}") from e
+    if pc is None:
+        return None
+    return {"price": pc, "prev_close": pc, "ts": None,
+            "session": "CLOSED", "pct": None, "stale": True}
 
 
 if __name__ == "__main__":

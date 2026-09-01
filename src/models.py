@@ -72,6 +72,7 @@ class Alert(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     last_fired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     last_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_prev_close: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_checked_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
 
     fires: Mapped[list["Fire"]] = relationship(back_populates="alert",
@@ -93,6 +94,22 @@ class Alert(Base):
             return pct >= self.threshold
         return pct <= -abs(self.threshold)
 
+    def trigger_price(self, prev_close: float | None = None) -> float | None:
+        """The price at which this condition becomes true.
+
+        For the percentage kinds that depends on the previous close, so it moves
+        once a day; `last_prev_close` is the engine's most recent observation of
+        it. Returns None when the condition cannot be pinned to a price yet.
+        """
+        if self.kind == Kind.price_above or self.kind == Kind.price_below:
+            return self.threshold
+        pc = prev_close if prev_close is not None else self.last_prev_close
+        if not pc:
+            return None
+        if self.kind == Kind.pct_up:
+            return pc * (1.0 + self.threshold / 100.0)
+        return pc * (1.0 - abs(self.threshold) / 100.0)
+
     def describe(self) -> str:
         unit = "%" if self.kind in (Kind.pct_up, Kind.pct_down) else ""
         val = f"{self.threshold:g}{unit}" if unit else f"${self.threshold:,.2f}"
@@ -111,3 +128,19 @@ class Fire(Base):
     message: Mapped[str] = mapped_column(Text, default="")
 
     alert: Mapped[Alert] = relationship(back_populates="fires")
+
+
+class Meta(Base):
+    """Single-row-per-key scratch space shared by the two processes.
+
+    Used for the engine heartbeat: the poller runs in its own container, so the
+    web app cannot see whether it is alive except through the database. Without
+    this, /healthz reports "ok" for a dead poller - the one failure it exists to
+    catch.
+    """
+    __tablename__ = "meta"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow,
+                                                    onupdate=utcnow)

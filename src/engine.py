@@ -8,8 +8,8 @@ import logging
 import time
 
 from src import config, notify, quotes
-from src.db import Session, init_db
-from src.models import Alert, Fire, Kind, Repeat, utcnow
+from src.db import (HEARTBEAT_KEY, LAST_ERROR_KEY, Session, init_db, set_meta)
+from src.models import Alert, Fire, Kind, Meta, Repeat, utcnow
 
 log = logging.getLogger("engine")
 
@@ -42,22 +42,37 @@ def _body(a: Alert, q: dict) -> str:
     )
 
 
+def _heartbeat(s, market: str) -> None:
+    """Record that a pass completed, in the same transaction as its results.
+
+    The poller is a separate container; this row is the only way the web app can
+    tell a live poller from a dead one.
+    """
+    for key, value in ((HEARTBEAT_KEY, market), (LAST_ERROR_KEY, "")):
+        row = s.get(Meta, key)
+        if row is None:
+            s.add(Meta(key=key, value=value))
+        else:
+            row.value = value
+            row.updated_at = utcnow()
+
+
 def check_once(session_factory=Session) -> int:
     """One evaluation pass. Returns the number of alerts fired."""
     s = session_factory()
     fired = 0
     try:
         alerts = s.query(Alert).filter(Alert.active.is_(True)).all()
-        if not alerts:
-            return 0
-
         market = quotes.market_session_now()
         # only fetch symbols that some alert actually wants evaluated right now
         wanted = {a.ticker for a in alerts
                   if market in TRADING_SESSIONS
                   and (a.extended_hours or market == "REG")}
         if not wanted:
-            log.info("market %s — no alerts eligible this session", market)
+            if alerts:
+                log.info("market %s — no alerts eligible this session", market)
+            _heartbeat(s, market)
+            s.commit()
             return 0
 
         q = quotes.get_quotes(sorted(wanted),
@@ -71,6 +86,8 @@ def check_once(session_factory=Session) -> int:
                 continue
             d = q[a.ticker]
             a.last_price = d["price"]
+            if d.get("prev_close"):
+                a.last_prev_close = d["prev_close"]
             a.last_checked_at = now
             hit = a.satisfied(d["price"], d["prev_close"])
 
@@ -90,6 +107,7 @@ def check_once(session_factory=Session) -> int:
             elif not hit:
                 a.armed = True          # re-arm once the condition clears
 
+        _heartbeat(s, market)
         s.commit()
         return fired
     except Exception:
@@ -114,6 +132,7 @@ def run():
         except Exception as e:
             # never let a transient data error kill the loop
             log.error("poll failed: %s: %s", type(e).__name__, e)
+            set_meta(LAST_ERROR_KEY, f"{type(e).__name__}: {e}")
         time.sleep(config.POLL_SECONDS)
 
 

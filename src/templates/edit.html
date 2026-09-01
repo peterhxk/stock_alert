@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ a.ticker }} — Price Alerts{% endblock %}
+{% block sub %}<p class="sub">Editing an alert. Changing the ticker, condition or
+threshold re-arms it, so it fires on the next crossing rather than immediately.</p>{% endblock %}
+{% block body %}
+<div class="card">
+  <h2>Edit alert</h2>
+  <form method="post">
+    <div class="grid">
+      <div>
+        <label for="ticker">Ticker</label>
+        <input id="ticker" name="ticker" value="{{ a.ticker }}" required
+               autocapitalize="characters" autocomplete="off">
+      </div>
+      <div>
+        <label for="kind">Condition</label>
+        <select id="kind" name="kind">
+          {% for k, label in [('price_above','price rises above'),
+                              ('price_below','price falls below'),
+                              ('pct_up','gains at least (%)'),
+                              ('pct_down','falls at least (%)')] %}
+          <option value="{{ k }}" {{ 'selected' if a.kind.value == k }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="threshold">Threshold</label>
+        <input id="threshold" name="threshold" type="number" step="any" min="0"
+               value="{{ '%g'|format(a.threshold) }}" required>
+      </div>
+      <div>
+        <label for="repeat">Repeat</label>
+        <select id="repeat" name="repeat">
+          {% for r, label in [('rearm','once per crossing'),
+                              ('once','once, then disable'),
+                              ('cooldown','repeat, with cooldown')] %}
+          <option value="{{ r }}" {{ 'selected' if a.repeat.value == r }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="cooldown_minutes">Cooldown (min)</label>
+        <input id="cooldown_minutes" name="cooldown_minutes" type="number"
+               min="1" value="{{ a.cooldown_minutes }}">
+      </div>
+      <div>
+        <label for="note">Note (optional)</label>
+        <input id="note" name="note" value="{{ a.note }}" placeholder="why you care">
+      </div>
+    </div>
+    <div class="row-end">
+      <button class="primary" type="submit">Save changes</button>
+      <a href="{{ url_for('index') }}"><button type="button">Cancel</button></a>
+      <label class="check">
+        <input type="checkbox" name="extended_hours" {{ 'checked' if a.extended_hours }}>
+        include pre-market &amp; after-hours
+      </label>
+    </div>
+  </form>
+</div>
+{% endblock %}
