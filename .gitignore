@@ -5,7 +5,9 @@ __pycache__/
 *.pyc
 .DS_Store
 
-# Local database and logs — the container mounts these as a volume
-data/*.db
-data/*.db-journal
-data/*.log
+# Everything the app writes at runtime — the container mounts this as a volume.
+# Ignore the whole directory rather than listing extensions: WAL mode adds
+# alerts.db-wal/-shm, and .secret_key signs session cookies and must never be
+# committed. Keep the directory itself so a fresh clone has somewhere to write.
+data/*
+!data/.gitkeep
